@@ -1336,7 +1336,7 @@ QUnit.test( "Empty replaceWith (trac-13401; trac-13596; gh-2204)", function( ass
 
 	assert.expect( 25 );
 
-	var $el = jQuery( "<div/><div/>" ).html( "<p>0</p>" ),
+	var $el = jQuery( "<div></div><div></div>" ).html( "<p>0</p>" ),
 		expectedHTML = $el.html(),
 		tests = {
 			"empty string": "",
@@ -1673,7 +1673,7 @@ function testHtml( valueObj, assert ) {
 		div = jQuery( "<div></div>" ),
 		fixture = jQuery( "#qunit-fixture" );
 
-	div.html( valueObj( "<div id='parent_1'><div id='child_1'/></div><div id='parent_2'/>" ) );
+	div.html( valueObj( "<div id='parent_1'><div id='child_1'></div></div><div id='parent_2'></div>" ) );
 	assert.equal( div.children().length, 2, "Found children" );
 	assert.equal( div.children().children().length, 1, "Found grandchild" );
 
@@ -2337,7 +2337,7 @@ QUnit.test( "Guard against exceptions when clearing safeChildNodes", function( a
 	var div;
 
 	try {
-		div = jQuery( "<div/><hr/><code/><b/>" );
+		div = jQuery( "<div></div><hr/><code></code><b></b>" );
 	} catch ( e ) {}
 
 	assert.ok( div && div.jquery, "Created nodes safely, guarded against exceptions on safeChildNodes[ -1 ]" );
@@ -2470,7 +2470,7 @@ QUnit.test( "jQuery._evalUrl (#12838)", function( assert ) {
 		assert.equal( ( input.url || input ).slice( -1 ), expectedArgument, message );
 		expectedArgument++;
 	};
-	jQuery( "#qunit-fixture" ).append( "<script src='1'/><script src='2'/>" );
+	jQuery( "#qunit-fixture" ).append( "<script src='1'></script><script src='2'></script>" );
 	assert.equal( expectedArgument, 3, "synchronous execution" );
 
 	message = "custom implementation";
@@ -2479,7 +2479,7 @@ QUnit.test( "jQuery._evalUrl (#12838)", function( assert ) {
 	jQuery.ajax = function( options ) {
 		assert.strictEqual( options, {}, "Unexpected call to jQuery.ajax" );
 	};
-	jQuery( "#qunit-fixture" ).append( "<script src='3'/><script src='4'/>" );
+	jQuery( "#qunit-fixture" ).append( "<script src='3'></script><script src='4'></script>" );
 
 	jQuery.ajax = ajax;
 	jQuery._evalUrl = evalUrl;
@@ -2509,7 +2509,7 @@ QUnit.test( "jQuery.htmlPrefilter (gh-1747)", function( assert ) {
 	expectedArgument = "A-" + poison + "B-" + poison + poison + "C-";
 	fixture.html( expectedArgument );
 
-	expectedArgument = "D-" + poison + "E-" + "<del/><div>" + poison + poison + "</div>" + "F-";
+	expectedArgument = "D-" + poison + "E-" + "<del></del><div>" + poison + poison + "</div>" + "F-";
 	fixture.append( expectedArgument );
 
 	expectedArgument = poison;
@@ -2564,7 +2564,7 @@ QUnit.test( "Index for function argument should be received (#13094)", function(
 
 	var i = 0;
 
-	jQuery( "<div/><div/>" ).before( function( index ) {
+	jQuery( "<div></div><div></div>" ).before( function( index ) {
 		assert.equal( index, i++, "Index should be correct" );
 	} );
 
@@ -2604,4 +2604,164 @@ QUnit.asyncTest( "Insert script with data-URI (gh-1887)", 1, function( assert ) 
 
 		QUnit.start();
 	}, 100 );
+} );
+
+QUnit.test( "Sanitized HTML doesn't get unsanitized", function( assert ) {
+
+	var container, i,
+		executed = {},
+		oldIos = /iphone os (?:6|7|8|9|10|11|12)_/i.test( navigator.userAgent ),
+		done = assert.async(),
+
+		// Note: the xss() argument of each payload must equal its index in this array
+		// for the assertion messages to be correct.
+		// Thanks to Masato Kinugawa from Cure53 for providing the following test cases.
+		htmlStrings = [
+			"<img alt=\"<x\" title=\"/><img src=url404 onerror=xss(0)>\">",
+			"<img alt=\"\n<x\" title=\"/>\n<img src=url404 onerror=xss(1)>\">",
+			"<style><style/><img src=url404 onerror=xss(2)>",
+			"<xmp><xmp/><img src=url404 onerror=xss(3)>",
+			"<title><title /><img src=url404 onerror=xss(4)>",
+			"<iframe><iframe/><img src=url404 onerror=xss(5)>",
+			"<noframes><noframes/><img src=url404 onerror=xss(6)>",
+			"<noscript><noscript/><img src=url404 onerror=xss(7)>",
+			"<foo\" alt=\"\" title=\"/><img src=url404 onerror=xss(8)>\">",
+			"<img alt=\"<x\" title=\"\" src=\"/><img src=url404 onerror=xss(9)>\">",
+			"<noscript/><img src=url404 onerror=xss(10)>",
+			"<option><style></option></select><img src=url404 onerror=xss(11)></style>"
+		];
+
+	// Support: iOS 6 - 12 only.
+	// Old iOS parses `<noembed>` tags differently, executing this code. This is no
+	// different to native behavior on that OS, though, so just accept it.
+	if ( !oldIos ) {
+		htmlStrings.push( "<noembed><noembed/><img src=url404 onerror=xss(12)>" );
+	}
+
+	assert.expect( htmlStrings.length );
+
+	Globals.register( "xss" );
+	window.xss = function( index ) {
+		executed[ index ] = true;
+	};
+
+	container = jQuery( "<div></div>" ).appendTo( "#qunit-fixture" );
+
+	for ( i = 0; i < htmlStrings.length; i++ ) {
+		jQuery( "<div></div>" ).appendTo( container ).html( htmlStrings[ i ] );
+	}
+
+	setTimeout( function() {
+		for ( i = 0; i < htmlStrings.length; i++ ) {
+			assert.ok( !executed[ i ], "Insecure code wasn't executed, input: " + htmlStrings[ i ] );
+		}
+		done();
+	}, 1000 );
+} );
+
+QUnit.test( "<option>/<optgroup> HTML isn't parsed inside a <select> wrapper", function( assert ) {
+
+	var div,
+		probe = document.createElement( "div" ),
+		methods = [ "append", "prepend", "before", "after", "replaceWith" ];
+
+	// Support: IE <=9 only
+	// IE <=9 replaces <option> tags with their contents when inserted outside of
+	// the select element, so the <select> wrapper is still required there.
+	probe.innerHTML = "<option></option>";
+	if ( !probe.lastChild ) {
+		assert.expect( 1 );
+		assert.ok( true, "<option> needs a <select> wrapper in this browser" );
+		return;
+	}
+
+	assert.expect( 6 + methods.length * 2 );
+
+	// Inside a <select> wrapper the stray </select> would close the wrapper and
+	// change how the rest of the markup is parsed.
+	div = jQuery( "<option>a</option></select><b>b</b>" );
+	assert.equal( div.length, 2, "jQuery(): the option and its sibling are both created" );
+	assert.equal( div[ 0 ] && div[ 0 ].nodeName.toLowerCase(), "option",
+		"jQuery(): the first node is the option" );
+	assert.equal( div[ 1 ] && div[ 1 ].nodeName.toLowerCase(), "b",
+		"jQuery(): the second node is the sibling" );
+
+	assert.equal( jQuery.parseHTML( "<optgroup label='g'></optgroup></select><b>b</b>" ).length, 2,
+		"jQuery.parseHTML(): the optgroup and its sibling are both created" );
+
+	div = jQuery( "<div></div>" ).html( "<option>a</option></select><b>b</b>" );
+	assert.equal( div.children().length, 2, "html(): the option and its sibling are both created" );
+
+	div = jQuery( "<div></div>" ).append( "<optgroup label='g'></optgroup></select><b>b</b>" );
+	assert.equal( div.children().length, 2,
+		"append(): the optgroup and its sibling are both created" );
+
+	jQuery.each( methods, function( i, method ) {
+		div = jQuery( "<div></div>" );
+		jQuery( "<i></i>" ).appendTo( div )[ method ]( "<option>a</option></select><b>b</b>" );
+		assert.equal( div.find( "option" ).length, 1, method + "(): the option is created" );
+		assert.equal( div.find( "b" ).length, 1, method + "(): the sibling is created" );
+	} );
+} );
+
+QUnit.test( "Sanitized <option>/<optgroup> HTML doesn't get unsanitized by DOM manipulation methods", function( assert ) {
+
+	var container, i, j, payload,
+		executed = {},
+		payloads = [],
+		done = assert.async(),
+		templates = [
+			"<option><style></option></select><img src=url404 onerror=xss(#)></style>",
+			"<optgroup><style></optgroup></select><img src=url404 onerror=xss(#)></style>"
+		],
+		methods = [
+			[ "html", function( html ) {
+				jQuery( "<div></div>" ).appendTo( container ).html( html );
+			} ],
+			[ "append", function( html ) {
+				jQuery( "<div></div>" ).appendTo( container ).append( html );
+			} ],
+			[ "prepend", function( html ) {
+				jQuery( "<div></div>" ).appendTo( container ).prepend( html );
+			} ],
+			[ "before", function( html ) {
+				jQuery( "<div></div>" ).appendTo( container ).before( html );
+			} ],
+			[ "after", function( html ) {
+				jQuery( "<div></div>" ).appendTo( container ).after( html );
+			} ],
+			[ "replaceWith", function( html ) {
+				jQuery( "<div></div>" ).appendTo( container ).replaceWith( html );
+			} ],
+			[ "jQuery", function( html ) {
+				jQuery( html );
+			} ],
+			[ "jQuery.parseHTML", function( html ) {
+				container.append( jQuery.parseHTML( html ) );
+			} ]
+		];
+
+	assert.expect( templates.length * methods.length );
+
+	Globals.register( "xss" );
+	window.xss = function( index ) {
+		executed[ index ] = true;
+	};
+
+	container = jQuery( "<div></div>" ).appendTo( "#qunit-fixture" );
+
+	for ( i = 0; i < templates.length; i++ ) {
+		for ( j = 0; j < methods.length; j++ ) {
+			payload = templates[ i ].replace( "#", payloads.length );
+			payloads.push( methods[ j ][ 0 ] + "( " + payload + " )" );
+			methods[ j ][ 1 ]( payload );
+		}
+	}
+
+	setTimeout( function() {
+		for ( i = 0; i < payloads.length; i++ ) {
+			assert.ok( !executed[ i ], "Insecure code wasn't executed: " + payloads[ i ] );
+		}
+		done();
+	}, 1000 );
 } );
